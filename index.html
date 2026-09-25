@@ -1441,37 +1441,62 @@
 
     const domainKey = "imran-hossain-com";
     const todayDateKey = new Date().toISOString().slice(0, 10);
+    const visitSessionKey = "portfolio_visit_logged";
 
-    // Total Visitors Count
-    fetch(`https://api.counterapi.dev/v1/${domainKey}/total_visits/up`)
-      .then(res => res.json())
-      .then(data => {
-        if (totalEl) totalEl.textContent = (data.count || 1).toLocaleString();
-      })
-      .catch(() => {
-        let fallbackTotal = parseInt(localStorage.getItem("total_site_visits") || "150") + 1;
-        localStorage.setItem("total_site_visits", fallbackTotal);
-        if (totalEl) totalEl.textContent = fallbackTotal.toLocaleString();
-      });
+    const alreadyCountedThisVisit = sessionStorage.getItem(visitSessionKey) === "1";
 
-    // Today's Visitors Count
-    fetch(`https://api.counterapi.dev/v1/${domainKey}/visits_${todayDateKey}/up`)
-      .then(res => res.json())
-      .then(data => {
-        if (todayEl) todayEl.textContent = (data.count || 1).toLocaleString();
-      })
-      .catch(() => {
-        let storedDay = localStorage.getItem("visit_day");
-        let dayCount = parseInt(localStorage.getItem("today_visits") || "1");
-        if (storedDay === todayDateKey) {
-          dayCount += 1;
-        } else {
-          dayCount = 1;
+    function setFallbackTotal(nextTotal) {
+      localStorage.setItem("total_site_visits", String(nextTotal));
+      if (totalEl) totalEl.textContent = nextTotal.toLocaleString();
+    }
+
+    function setFallbackToday(nextCount) {
+      localStorage.setItem("visit_day", todayDateKey);
+      localStorage.setItem("today_visits", String(nextCount));
+      if (todayEl) todayEl.textContent = nextCount.toLocaleString();
+    }
+
+    if (alreadyCountedThisVisit) {
+      const fallbackTotal = Number(localStorage.getItem("total_site_visits") || "150");
+      const fallbackToday = Number(localStorage.getItem("today_visits") || "1");
+      if (totalEl) totalEl.textContent = fallbackTotal.toLocaleString();
+      if (todayEl) todayEl.textContent = fallbackToday.toLocaleString();
+      return;
+    }
+
+    Promise.all([
+      fetch(`https://api.counterapi.dev/v1/${domainKey}/total_visits/up`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error("Total counter failed");
+          const data = await res.json();
+          const totalCount = Number(data.count || 1);
+          localStorage.setItem("total_site_visits", String(totalCount));
+          if (totalEl) totalEl.textContent = totalCount.toLocaleString();
+        })
+        .catch(() => {
+          const previousTotal = Number(localStorage.getItem("total_site_visits") || "150");
+          const nextTotal = previousTotal + 1;
+          setFallbackTotal(nextTotal);
+        }),
+
+      fetch(`https://api.counterapi.dev/v1/${domainKey}/visits_${todayDateKey}/up`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error("Today counter failed");
+          const data = await res.json();
+          const todayCount = Number(data.count || 1);
           localStorage.setItem("visit_day", todayDateKey);
-        }
-        localStorage.setItem("today_visits", dayCount);
-        if (todayEl) todayEl.textContent = dayCount.toLocaleString();
-      });
+          localStorage.setItem("today_visits", String(todayCount));
+          if (todayEl) todayEl.textContent = todayCount.toLocaleString();
+        })
+        .catch(() => {
+          const storedDay = localStorage.getItem("visit_day");
+          const previousToday = Number(localStorage.getItem("today_visits") || "0");
+          const nextToday = storedDay === todayDateKey ? previousToday + 1 : 1;
+          setFallbackToday(nextToday);
+        })
+    ]).finally(() => {
+      sessionStorage.setItem(visitSessionKey, "1");
+    });
   })();
 </script>
 <!-- ================= VISITOR COUNTER END ================= -->
