@@ -1443,38 +1443,52 @@
     const todayDateKey = new Date().toISOString().slice(0, 10);
     const visitSessionKey = "portfolio_visit_logged";
 
-    const alreadyCountedThisVisit = sessionStorage.getItem(visitSessionKey) === "1";
+    function toSafeNumber(value, fallback) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function normalizeToday(todayValue, totalValue) {
+      const safeToday = Math.max(0, toSafeNumber(todayValue, 0));
+      const safeTotal = Math.max(0, toSafeNumber(totalValue, 0));
+      return Math.min(safeToday, safeTotal);
+    }
 
     function setFallbackTotal(nextTotal) {
-      localStorage.setItem("total_site_visits", String(nextTotal));
-      if (totalEl) totalEl.textContent = nextTotal.toLocaleString();
+      const safeTotal = Math.max(0, toSafeNumber(nextTotal, 0));
+      localStorage.setItem("total_site_visits", String(safeTotal));
+      if (totalEl) totalEl.textContent = safeTotal.toLocaleString();
     }
 
     function setFallbackToday(nextCount) {
+      const totalCount = Math.max(0, toSafeNumber(localStorage.getItem("total_site_visits") || "0", 0));
+      const safeToday = normalizeToday(nextCount, totalCount);
       localStorage.setItem("visit_day", todayDateKey);
-      localStorage.setItem("today_visits", String(nextCount));
-      if (todayEl) todayEl.textContent = nextCount.toLocaleString();
+      localStorage.setItem("today_visits", String(safeToday));
+      if (todayEl) todayEl.textContent = safeToday.toLocaleString();
     }
 
-    if (alreadyCountedThisVisit) {
-      const fallbackTotal = Number(localStorage.getItem("total_site_visits") || "150");
-      const fallbackToday = Number(localStorage.getItem("today_visits") || "1");
+    if (sessionStorage.getItem(visitSessionKey) === "1") {
+      const fallbackTotal = Math.max(0, toSafeNumber(localStorage.getItem("total_site_visits") || "150", 150));
+      const fallbackToday = normalizeToday(localStorage.getItem("today_visits") || "0", fallbackTotal);
       if (totalEl) totalEl.textContent = fallbackTotal.toLocaleString();
       if (todayEl) todayEl.textContent = fallbackToday.toLocaleString();
       return;
     }
+
+    sessionStorage.setItem(visitSessionKey, "1");
 
     Promise.all([
       fetch(`https://api.counterapi.dev/v1/${domainKey}/total_visits/up`)
         .then(async (res) => {
           if (!res.ok) throw new Error("Total counter failed");
           const data = await res.json();
-          const totalCount = Number(data.count || 1);
+          const totalCount = Math.max(0, toSafeNumber(data.count, 0));
           localStorage.setItem("total_site_visits", String(totalCount));
           if (totalEl) totalEl.textContent = totalCount.toLocaleString();
         })
         .catch(() => {
-          const previousTotal = Number(localStorage.getItem("total_site_visits") || "150");
+          const previousTotal = Math.max(0, toSafeNumber(localStorage.getItem("total_site_visits") || "150", 150));
           const nextTotal = previousTotal + 1;
           setFallbackTotal(nextTotal);
         }),
@@ -1483,19 +1497,27 @@
         .then(async (res) => {
           if (!res.ok) throw new Error("Today counter failed");
           const data = await res.json();
-          const todayCount = Number(data.count || 1);
+          const todayCount = Math.max(0, toSafeNumber(data.count, 0));
+          const totalCount = Math.max(0, toSafeNumber(localStorage.getItem("total_site_visits") || "0", 0));
+          const safeToday = normalizeToday(todayCount, totalCount);
           localStorage.setItem("visit_day", todayDateKey);
-          localStorage.setItem("today_visits", String(todayCount));
-          if (todayEl) todayEl.textContent = todayCount.toLocaleString();
+          localStorage.setItem("today_visits", String(safeToday));
+          if (todayEl) todayEl.textContent = safeToday.toLocaleString();
         })
         .catch(() => {
           const storedDay = localStorage.getItem("visit_day");
-          const previousToday = Number(localStorage.getItem("today_visits") || "0");
+          const previousToday = Math.max(0, toSafeNumber(localStorage.getItem("today_visits") || "0", 0));
           const nextToday = storedDay === todayDateKey ? previousToday + 1 : 1;
           setFallbackToday(nextToday);
         })
-    ]).finally(() => {
-      sessionStorage.setItem(visitSessionKey, "1");
+    ]).then(() => {
+      const totalCount = Math.max(0, toSafeNumber(localStorage.getItem("total_site_visits") || "0", 0));
+      const todayCount = Math.max(0, toSafeNumber(localStorage.getItem("today_visits") || "0", 0));
+      const safeToday = normalizeToday(todayCount, totalCount);
+      if (safeToday !== todayCount) {
+        localStorage.setItem("today_visits", String(safeToday));
+        if (todayEl) todayEl.textContent = safeToday.toLocaleString();
+      }
     });
   })();
 </script>
